@@ -115,6 +115,7 @@ int svgInit(SVG **svg){
     (*svg)->width = 0;
     (*svg)->height = 0;
     (*svg)->geometryCount = 0;
+    (*svg)->geometries = malloc(0);
 
     (*svg)->bounds[0] = DBL_MAX;
     (*svg)->bounds[1] = DBL_MAX;
@@ -258,6 +259,12 @@ double absolute(double currentPoint, double point, bool absolute){
     return (absolute == true) ? point : currentPoint + point;
 }
 
+void updateReflection(double *reflection, double pX3, double pY3, double pX4, double pY4){
+    reflection[0] = pX4 - pX3;
+    reflection[1] = pY4 - pY3;
+    // printf("New reflection: [%g %g]\n", reflection[0], reflection[1]);
+}
+
 // Loop throw all commands and convert them to geometry
 // the geometry is closed when there is a z command
 void path2Geometry(Geometry ***geometries, uint16_t *geometryCount, Path *path){
@@ -265,6 +272,9 @@ void path2Geometry(Geometry ***geometries, uint16_t *geometryCount, Path *path){
     double y = 0;
     double commandStartX = 0;
     double commandStartY = 0;
+
+    char lastCommandType;
+    double reflection[2] = {0};
 
     Geometry *geometry;
     geometryInit(&geometry);
@@ -275,11 +285,13 @@ void path2Geometry(Geometry ***geometries, uint16_t *geometryCount, Path *path){
     *geometries = malloc(sizeof(Geometry*) * (*geometryCount));
 
     Command *command = NULL;
-    for(uint16_t i = 0; i < path->commandsSize; i++){
-        command = path->commands[i];
+
+    for(uint16_t commandIndex = 0; commandIndex < path->commandsSize; commandIndex++){
+        command = path->commands[commandIndex];
         uint16_t parametersSize = command->parametersSize;
+        // printf("typeIndex: %u\n", command->typeIndex);
         uint8_t commandSize = commandsSizes[command->typeIndex];
-        // printf("Command[%u]: %c\n", command->type, (char)command->type);
+        // printf("Command[%u]: %c\n", parametersSize, (char)command->type);
 
         if(commandSize != 0 && parametersSize % commandSize != 0){
             fprintf(stderr, "%c command has wrong number of parameters\n", (char)command->type);
@@ -292,7 +304,7 @@ void path2Geometry(Geometry ***geometries, uint16_t *geometryCount, Path *path){
             push(geometry->pointsHead, &geometry->pointsTail, voidPoint);
 
             *(*geometries + *geometryCount - 1) = geometry;
-            if(i != path->commandsSize - 1){
+            if(commandIndex != path->commandsSize - 1){
                 // printf("New geometry alloc\n");
                 geometryInit(&geometry);
                 initSingleLinkedList(&geometry->pointsHead, &geometry->pointsTail);
@@ -323,8 +335,31 @@ void path2Geometry(Geometry ***geometries, uint16_t *geometryCount, Path *path){
                 double pY3 = absolute(y, points[i + 3], command->absolute);
                 double pX4 = absolute(x, points[i + 4], command->absolute);
                 double pY4 = absolute(y, points[i + 5], command->absolute);
+                updateReflection(reflection, pX3, pY3, pX4, pY4);
                 curveto(geometry, &x, &y, pX2, pY2, pX3, pY3, pX4, pY4);
                 // printf("Curveto: %g %g\n", x, y);
+            }
+        }
+        else if(command->type == 's'){
+            double *points = command->parameters;
+            double pX2, pY2, pX3, pY3, pX4, pY4;
+            for(uint16_t i = 0; i < parametersSize; i += commandSize){
+                // If command before was curveto or shorthand/smooth curveto then only use the calculated reflection
+                // else the first control point will be coincident with current point (x, y)
+                if((i == 0 && (lastCommandType == 'c' || lastCommandType == 's')) || 0 < i){
+                    pX2 = reflection[0] + x;
+                    pY2 = reflection[1] + y;
+                }
+                else{
+                    pX2 = x;
+                    pY2 = y;
+                }
+                pX3 = absolute(x, points[i + 0], command->absolute);
+                pY3 = absolute(y, points[i + 1], command->absolute);
+                pX4 = absolute(x, points[i + 2], command->absolute);
+                pY4 = absolute(y, points[i + 3], command->absolute);
+                updateReflection(reflection, pX3, pY3, pX4, pY4);
+                curveto(geometry, &x, &y, pX2, pY2, pX3, pY3, pX4, pY4);
             }
         }
         else if(command->type == 'l'){
@@ -366,6 +401,8 @@ void path2Geometry(Geometry ***geometries, uint16_t *geometryCount, Path *path){
         else{
             printf("Command \"%c\" not found\n", command->type);
         }
+
+        lastCommandType = command->type;
     }
     *(*geometries + *geometryCount - 1) = geometry;
 }
@@ -440,6 +477,7 @@ void parsePath(xmlNode *node, Path **path){
         bool upperCaseChar = (65 <= charV && charV <= 90);
         bool lowerCaseChar = (97 <= charV && charV <= 122);
         bool isChar = (upperCaseChar || lowerCaseChar);
+        charV = (upperCaseChar) ? charV + 32 : charV;
 
         // If its a char => new commands starts
         // first get type of the command
@@ -449,6 +487,7 @@ void parsePath(xmlNode *node, Path **path){
             // printf("New command[%i] %c\n", i, (char)charV);
             for(uint8_t tI = 0; tI < COMMANDS_LENGHT; tI++){
                 if(charV == commandsTypes[tI]){
+                    // printf("Char %c\n", charV);
                     commandTypeIndex = tI;
                     break;
                 }
@@ -460,7 +499,7 @@ void parsePath(xmlNode *node, Path **path){
             parametersIndex = 0;
             commands[i]->parameters = malloc(sizeof(double) * parametersSize);
             commands[i]->parametersSize = parametersSize;
-            commands[i]->type = (upperCaseChar) ? charV + 32 : charV;
+            commands[i]->type = charV;
             commands[i]->typeIndex = commandTypeIndex;
             commands[i]->absolute = upperCaseChar;
         }

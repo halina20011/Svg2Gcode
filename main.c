@@ -84,11 +84,12 @@ void svg2Gcode(SVG *svg, char *fileOutput, double width, double height, double z
         Geometry *geometry = svg->geometries[i];
         Node *current = geometry->pointsHead;
 
-        for(int pointIndex = 0;current->next != NULL; pointIndex++){
+        for(int pointIndex = 0; current->next != NULL; pointIndex++){
             current = current->next;
             void *data = current->data;
             double x = **((double**) (data + 0));
             double y = **((double**) (data + sizeof(double*)));
+            // printf("Points [%g %g]\n", x, y);
             y = (y - svg->height) * -1.0;
             x = (width != -1 && width <= x) ? width : x;
             y = (height != -1 && height <= y) ? height: y;

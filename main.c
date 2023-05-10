@@ -42,7 +42,6 @@ int16_t parseInt16_t(char *strValue){
 
 void svgFileProperties(xmlNode *rootElement, uint16_t *width, uint16_t *height){
     xmlNodePtr node;
-
     xmlChar *widthData, *heightData;
     
     for(node = rootElement; node != NULL; node = node->next){
@@ -52,7 +51,7 @@ void svgFileProperties(xmlNode *rootElement, uint16_t *width, uint16_t *height){
         }
     }
     
-    // Unit will be ignored
+    // Units will be ignored
     long tempVal = 0;
     *width = (widthData != NULL) ? (tempVal = parseInt16_t((char*)widthData), xmlFree(widthData), tempVal) : 0;
     *height = (heightData != NULL) ? (tempVal = parseInt16_t((char*)heightData), xmlFree(heightData), tempVal) : 0;

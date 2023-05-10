@@ -255,6 +255,143 @@ void curveto(Geometry *geometry, double *x, double *y, double x1, double y1, dou
     }
 }
 
+double rad(double r){
+    return (r * 180.0) / ((double)M_PI);
+}
+
+double angleCalc(double x1, double y1, double x2, double y2){
+    double innerProduct = x1 * x2 + y1 * y2;
+    double lengthVectro1 = hypot(x1, y1);
+    double lengthVectro2 = hypot(x2, y2);
+    double r = acos(innerProduct / (lengthVectro1 * lengthVectro2));
+
+    if(x1 * y2 - y1 * x2 < 0.0){
+        r *= -1.0;
+    }
+
+    return r;
+}
+
+void normalizeAngle360(double *angle){
+    while(*angle < 0.0){
+        *angle += 360.0;
+    }
+    while(360.0 <= *angle){
+        *angle -= 360.0;
+    }
+}
+
+// https://www.w3.org/TR/SVG11/implnote.html#ArcConversionEndpointToCenter
+void centerParameterization(double *cx, double *cy, double *startAngle, double *deltaAngle, double x1, double y1, double x2, double y2, double rx, double ry, double phi, bool fa, bool fs){
+    // printf("%g, %g, %g, %g, %g, %g, %g, %i, %i\n", x1, y1, x2, y2, rx, ry, phi, (int)fa, (int)fs);
+    double phiSin = sin(phi);
+    double phiCos = cos(phi);
+
+    double xHalfDiff = (x1 - x2) / 2.0;
+    double yHalfDiff = (y1 - y2) / 2.0;
+    double xHalfSum  = (x1 + x2) / 2.0;
+    double yHalfSum  = (y1 + y2) / 2.0;
+
+    // Compute x1', y1'
+    double x1Prime = phiCos * xHalfDiff + phiSin * yHalfDiff;
+    double y1Prime = -phiSin * xHalfDiff + phiCos * yHalfDiff;
+    // printf("%g %g\n", x1Prime, y1Prime);
+
+    double x1PrimeSquare = pow(x1Prime, 2);
+    double y1PrimeSquare = pow(y1Prime, 2);
+
+    // Radii out of range correction
+    rx = fabs(rx);
+    ry = fabs(ry);
+
+    double lambda = (x1PrimeSquare / (rx*rx)) + (y1PrimeSquare / (ry*ry));
+    if(1.0 < lambda){
+        double lambdaSqrt = sqrt(lambda);
+        rx = lambdaSqrt * rx;
+        ry = lambdaSqrt * ry;
+    }
+
+    double rxSquare = pow(rx, 2);
+    double rySquare = pow(ry, 2);
+
+    // Compute cx', cy'
+    double line1 = (rxSquare * rySquare) - (rxSquare * y1PrimeSquare) - (rySquare * x1PrimeSquare);
+    double line2 = (rxSquare * y1PrimeSquare) + (rySquare * x1PrimeSquare);
+    double scalar = sqrt(fabs(line1/line2));
+    if(fa == fs){
+        scalar *= -1.0;
+    }
+
+    // printf("L %g %g Scalar: %g\n", line1, line2, scalar);
+
+    double cxPrime = scalar * ((rx * y1Prime) / ry);
+    double cyPrime = scalar * (-(ry * x1Prime) / rx);
+    // printf("%g %g\n", cxPrime, cyPrime);
+
+    *cx = (phiCos * cxPrime) + (-phiSin * cyPrime) + xHalfSum;
+    *cy = (phiSin * cxPrime) + (phiCos * cyPrime) + yHalfSum;
+
+    // Calculate start and end angle
+    double xVector =  (x1Prime - cxPrime) / rx;
+    double yVector =  (y1Prime - cyPrime) / ry;
+    double xVector2 = (x1Prime + cxPrime) / rx;
+    double yVector2 = (y1Prime + cyPrime) / ry;
+    // printf("%g %g %g %g\n", xVector, yVector, xVector2, yVector2);
+    
+    *startAngle = rad(angleCalc(1.0, 0.0, xVector, yVector));
+    *deltaAngle = rad(angleCalc(xVector, yVector, -xVector2, -yVector2));
+    normalizeAngle360(deltaAngle);
+    if(fs == false){
+        *deltaAngle -= 360.0;
+    }
+
+    // printf("Center of ellipse is [%g %g] %g %g\n", *cx, *cy, *startAngle, *deltaAngle);
+}
+
+void rotate(double *x, double *y, double theta){
+    double xPrime = *x * cos(theta) - *y * sin(theta);
+    double yPrime = *x * sin(theta) + *y * cos(theta);
+    *x = xPrime;
+    *y = yPrime;
+}
+
+void ellipticalArc(Geometry *geometry, double *x1, double *y1, double x2, double y2, double rx, double ry, double xAxisRotation, bool largeArcFlag, bool sweepFlag){
+    double cx, cy, startAngle, deltaAngle;
+    // Calculate center point
+    centerParameterization(&cx, &cy, &startAngle, &deltaAngle, *x1, *y1, x2, y2, rx, ry, xAxisRotation, largeArcFlag, sweepFlag);
+    
+    double endAngle = startAngle + deltaAngle;
+    normalizeAngle360(&endAngle);
+    // printf("Angles: %g %g %g\n", startAngle, deltaAngle, endAngle);
+
+    double theta = xAxisRotation;
+    // TODO: precalculate resolution of elliptical arc
+    double re = 2.0;
+    bool clockwise = sweepFlag;
+    re *= (clockwise) ? 1.0 : -1.0;
+    double angle = 0.0;
+    double (*compareFunc)(double, double) = (clockwise) ? &fmin : &fmax;
+    while(((clockwise) ? (angle < deltaAngle + re) : (deltaAngle - re < angle))){
+        double alpha = ((startAngle + angle) * M_PI) / 180;
+        double xr = rx * cos(alpha);
+        double yr = ry * sin(alpha);
+
+        double x = cos(theta) * xr + -sin(theta) * yr + cx;
+        double y = sin(theta) * xr + cos(theta) * yr + cy;
+
+        addPoint(geometry, x, y);
+        
+        if(deltaAngle == angle){
+            break;
+        }
+
+        angle = compareFunc(angle + re, deltaAngle);
+    }
+
+    *x1 = x2;
+    *y1 = y2;
+}
+
 double absolute(double currentPoint, double point, bool absolute){
     return (absolute == true) ? point : currentPoint + point;
 }
@@ -396,6 +533,20 @@ void path2Geometry(Geometry ***geometries, uint16_t *geometryCount, Path *path){
                 double pX3 = absolute(x, points[i + 2], command->absolute);
                 double pY3 = absolute(y, points[i + 3], command->absolute);
                 quadraticBeziercurveto(geometry, &x, &y, pX2, pY2, pX3, pY3);
+            }
+        }
+        else if(command->type == 'a'){
+            double *points = command->parameters;
+            for(uint16_t i = 0; i < parametersSize; i += commandSize){
+                double rx = points[i + 0];
+                double ry = points[i + 1];
+                double xAxisRotation = points[i + 2];
+                bool largeArcFlag = (points[i + 3] < 1) ? false : true;
+                bool sweepFlag    = (points[i + 4] < 1) ?  false : true;
+                double x2 = absolute(x, points[i + 5], command->absolute);
+                double y2 = absolute(y, points[i + 6], command->absolute);
+                // printf("Elliptical arc %g, %g, %g, %g, %g, %g, %g, %i, %i\n", x, y, x2, y2, rx, ry, xAxisRotation, (int)largeArcFlag, (int)sweepFlag);
+                ellipticalArc(geometry, &x, &y, x2, y2, rx, ry, xAxisRotation, largeArcFlag, sweepFlag);
             }
         }
         else{
@@ -556,10 +707,6 @@ void traversElement(xmlNode *node, unsigned int depth, SVG *svg){
                     svg->geometries[i + geometryOffset] = geometries[i];
                 }
             }
-            // else if(xmlStrcmp(currentNode->name, (const xmlChar*)"rect") == 0){
-            //     rect
-            // }
-            // printf("%i\tnode type: element name %s\n", depth, currentNode->name);
             // printf("%i\tnode type: element name %s\n", depth, currentNode->name);
         }
 

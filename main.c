@@ -64,7 +64,7 @@ void checkParameter(int argc, int i, uint8_t paramSize){
     }
 }
 
-void svg2Gcode(SVG *svg, char *fileOutput, double width, double height, double zOffset){
+void svg2Gcode(struct SVG *svg, char *fileOutput, double width, double height, double zOffset){
     FILE *fp;
     fp = fopen(fileOutput, "w");
     if(fp == NULL){
@@ -80,7 +80,7 @@ void svg2Gcode(SVG *svg, char *fileOutput, double width, double height, double z
 
     for(uint16_t i = 0; i < svg->geometryCount; i++){
         fprintf(fp, "; Geomtery %i\n", i);
-        Geometry *geometry = svg->geometries[i];
+        struct Geometry *geometry = svg->geometries[i];
         Node *current = geometry->pointsHead;
 
         for(int pointIndex = 0; current->next != NULL; pointIndex++){
@@ -208,7 +208,7 @@ int main(int argc, char **argv){
 
     rootElement = xmlDocGetRootElement(document);
 
-    SVG *svg = NULL;
+    struct SVG *svg = NULL;
     if(svgInit(&svg)){
         fprintf(stderr, "error: couldnt create new svg\n");
         return 1;

@@ -21,4 +21,5 @@ Arguments:
 ```
 
 # Examples
-```./Build/svg2Gcode -f ./Examples/example.svg -z 10 -w 220 -h 200 -o ./Examples/example.gcode``` </br>
+```./Build/svg2Gcode -f ./Examples/text.svg -z 10 -w 220 -h 200 -o ./Examples/example.gcode``` </br>
+```./Build/svg2Gcode -f ./Examples/img1.svg``` </br>

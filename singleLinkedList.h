@@ -18,97 +18,72 @@
 
 #include <stdlib.h>
 
-typedef struct Node{
+struct Node{
     void *data;
     struct Node *next;
-} Node;
+};
 
-int initSingleLinkedList(Node **head, Node **tail){
-    *head = malloc(sizeof(Node));
+int initSingleLinkedList(struct Node **head, struct Node **tail){
+    *head = malloc(sizeof(struct Node));
     if(*head == NULL){
         return 1;
     }
 
     (*head)->data = NULL;
     (*head)->next = NULL;
-    *tail = *head;
+
+    (*tail)->data = NULL;
+    (*tail)->next = NULL;
 
     return 0;
 }
 
-void printSingleLinkedList(Node *head){
-    Node *current = head;
+void printSingleLinkedList(struct Node *head){
+    struct Node *current = head;
     while((current = current->next) != NULL){
         char *s = (void*)(current->data);
         printf("%s\n", s);
     }
 }
 
-// Add node to the end of the list
-Node *add(Node *head, void *data){
-    Node *newNode = malloc(sizeof(Node));
-    if(newNode == NULL){
-        return NULL;
-    }
-
-    newNode->data = data;
-    newNode->next = NULL;
-
-    Node *current = head;
-    while(current->next != NULL){
-        current = current->next;
-    }
-
-    current->next = newNode;
-
-    return newNode;
-}
-
 // if both are null: then return null
 // if tail is null: get last node from head
 // if head->next null: set it to made node
-Node *push(Node *head, Node **tail, void *data){
-    if(head == NULL || tail == NULL){
-        return NULL;
-    }
-
-    Node *newNode = malloc(sizeof(Node));
+void push(struct Node **head, struct Node **tail, void *data){
+    struct Node *newNode = malloc(sizeof(struct Node));
     if(newNode == NULL){
-        return NULL;
+        return;
     }
 
     newNode->data = data;
     newNode->next = NULL;
-
-    if(*tail == NULL){
-        *tail = head;
-        while((*tail = (*tail)->next) != NULL){
-        }
+    
+    if(*head == NULL){
+        *head = newNode;
+        *tail = newNode;
     }
-
-    (*tail)->next = newNode;
-    *tail = newNode;
-
-    if(head->next == NULL){
-        printf("Head n is NULL\n");
-        head->next = newNode;
+    else{
+        (*tail)->next = newNode;
+        *tail = newNode;
     }
-
-    return newNode;
 }
 
-Node *insert(Node *head, char *data){
-    Node *newNode = malloc(sizeof(Node));
+void insert(struct Node **head, struct Node **tail, char *data){
+    struct Node *newNode = malloc(sizeof(struct Node));
     if(newNode == NULL){
-        return NULL;
+        return;
     }
 
-    newNode->next = head->next;
+    newNode->next = *head;
     newNode->data = data;
 
-    head->next = newNode;
-
-    return newNode;
+    if(*head == NULL){
+        *head = newNode;
+        *tail = newNode;
+    }
+    else{
+        *head = newNode;
+    }
 }
 
 char *delete(struct Node **head, int index){
@@ -130,19 +105,35 @@ char *delete(struct Node **head, int index){
     return data;
 }
 
-void freeSingleLinkedList(Node *head){
-    Node *current = head->next;
-
-    while(current != NULL){
-        Node *next = current->next;
-        free(current->data);
-        free(current);
-        current = next;
+char *deleteFront(struct Node **head, struct Node **tail){
+    if(*head == NULL){
+        return NULL;
     }
-    
-    head->next = NULL;
 
-    free(head);
+    char *data = (*head)->data;
+    struct Node *temp = *head;
+    if(*head == *tail){
+        *head = NULL;
+        *tail = NULL;
+    }
+    else{
+        *head = (*head)->next;
+    }
+
+    free(temp);
+
+    return data;
+}
+
+void freeSingleLinkedList(struct Node *head){
+    struct Node *curr = head;
+
+    while(curr){
+        struct Node *temp = curr;
+        curr = curr->next;
+        free(temp->data);
+        free(temp);
+    }
 }
 
 #endif

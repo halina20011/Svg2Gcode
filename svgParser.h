@@ -20,10 +20,12 @@
 #include <stdbool.h>
 #include <math.h>       // pow, hypot
 #include <float.h>      // DBL_MIN, DBL_MAX
+#include <stdint.h>
 
 #include <libxml/parser.h>
 
 #include "./singleLinkedList.h"
+#include "./vector.h"
 
 #define BUFFER_MAX_SIZE 32
 
@@ -32,9 +34,8 @@ uint8_t commandsTypes[COMMANDS_LENGHT]  = {'m', 'z', 'l', 'h', 'v', 'c', 's', 'q
 uint8_t commandsSizes[COMMANDS_LENGHT]  = {  2,   0,   2,   1,   1,   6,   4,   4,   2,   7};
 
 struct Geometry{
-    Node *pointsHead;
-    Node *pointsTail;
-    uint16_t numberOfPoints;
+    double *points;
+    size_t pointsSize;
     double bounds[4];
     double length;
 };
@@ -44,7 +45,8 @@ int geometryInit(struct Geometry **geometry){
     if(*geometry == NULL){
         return 1;
     }
-    (*geometry)->numberOfPoints = 0;
+    
+    (*geometry)->pointsSize = 0;
     (*geometry)->bounds[0] = DBL_MAX;
     (*geometry)->bounds[1] = DBL_MAX;
     (*geometry)->bounds[2] = DBL_MIN;
@@ -55,7 +57,7 @@ int geometryInit(struct Geometry **geometry){
 }
 
 void freeGeometry(struct Geometry *geometry){
-    freeSingleLinkedList(geometry->pointsHead);
+    free(geometry->points);
 }
 
 void *point2Void(double x, double y){
@@ -74,6 +76,11 @@ void *point2Void(double x, double y){
     return copy;
 }
 
+//     3
+//    ---
+// 0 |   | 2
+//    ---
+//     1
 void calculateBounds(double *bounds, double x, double y){
     if(x < bounds[0]){
         bounds[0] = x;
@@ -90,18 +97,22 @@ void calculateBounds(double *bounds, double x, double y){
     }
 }
 
-void addPoint(struct Geometry *geometry, double x, double y){
+void addPoint(struct Geometry *geometry, struct Vector *vector, double x, double y){
     calculateBounds(geometry->bounds, x, y);
     double d = hypot(x, y);
 
     geometry->length += d;
-
-    void *voidPoint = point2Void(x, y);
-    push(geometry->pointsHead, &geometry->pointsTail, voidPoint);
+    
+    vectorPush(vector, x);
+    vectorPush(vector, y);
+    // void *voidPoint = point2Void(x, y);
+    // printf("adding [%g %g] point\n", x, y);
+    // push(&geometry->pointsHead, &geometry->pointsTail, voidPoint);
 }
 
 struct SVG{
-    uint16_t width, height;
+    double width, height;
+    uint16_t docWidth, docHeight;
     struct Geometry **geometries;
     uint16_t geometryCount;
     double bounds[4];
@@ -132,27 +143,6 @@ void freeSvg(struct SVG *svg){
     free(svg);
 }
 
-void updateSvgBound(struct SVG *svg){
-    for(uint16_t i = 0; i < svg->geometryCount; i++){
-        struct Geometry *geometry = svg->geometries[i];
-        double *bounds = geometry->bounds;
-        
-        if(bounds[0] < svg->bounds[0]){
-            svg->bounds[0] = bounds[0];
-        }
-        if(svg->bounds[2] < bounds[2]){
-            svg->bounds[2] = bounds[2];
-        }
-
-        if(bounds[1] < svg->bounds[1]){
-            svg->bounds[1] = bounds[1];
-        }
-        if(svg->bounds[3] < bounds[3]){
-            svg->bounds[3] = bounds[3];
-        }
-    }
-}
-
 // void removePaddingSvg(struct SVG *svg){
 //     double offsetX = svg->bounds[0];
 //     double offsetY = svg->bounds[1];
@@ -172,7 +162,7 @@ void updateSvgBound(struct SVG *svg){
 //     printf("S: %g\n", scale);
 //     for(uint16_t i = 0; i < svg->geometryCount; i++){
 //         struct Geometry *geometry = svg->geometries[i];
-//         Node *current = geometry->pointsHead;
+//         struct Node *current = geometry->pointsHead;
 //         while(current->next != NULL){
 //             current = current->next;
 //             void *data = current->data;
@@ -189,6 +179,15 @@ struct Command{
     double *parameters;
     uint16_t parametersSize;
 };
+
+void printCommand(struct Command *command){
+    printf("%c ", command->type);
+    for(int i = 0; i < command->parametersSize; i++){
+        printf("%g ", command->parameters[i]);
+    }
+
+    printf("\n");
+}
 
 void freeCommand(struct Command *command){
     free(command->parameters);
@@ -229,11 +228,11 @@ double cubicBezierCurve(double t, double p0, double p1, double p2, double p3){
 // TODO calculate curveto resolution
 double resolution = 0.1;
 
-void quadraticBeziercurveto(struct Geometry *geometry, double *x, double *y, double x1, double y1, double x2, double y2){
+void quadraticBeziercurveto(struct Geometry *geometry, struct Vector *vector, double *x, double *y, double x1, double y1, double x2, double y2){
     for(double t = 0.0; t <= 1.0 + resolution; t = fmin(t + resolution, 1.0)){
         double px = quadraticBezierCurve(t, *x, x1, x2);
         double py = quadraticBezierCurve(t, *y, y1, y2);
-        addPoint(geometry, px, py);
+        addPoint(geometry, vector, px, py);
         if(1.0 <= t){
             *x = px;
             *y = py;
@@ -242,11 +241,11 @@ void quadraticBeziercurveto(struct Geometry *geometry, double *x, double *y, dou
     }
 }
 
-void curveto(struct Geometry *geometry, double *x, double *y, double x1, double y1, double x2, double y2, double x3, double y3){
+void curveto(struct Geometry *geometry, struct Vector *vector, double *x, double *y, double x1, double y1, double x2, double y2, double x3, double y3){
     for(double t = 0.0; t <= 1.0 + resolution; t = fmin(t + resolution, 1.0)){
         double px = cubicBezierCurve(t, *x, x1, x2, x3);
         double py = cubicBezierCurve(t, *y, y1, y2, y3);
-        addPoint(geometry, px, py);
+        addPoint(geometry, vector, px, py);
         if(1.0 <= t){
             *x = px;
             *y = py;
@@ -355,7 +354,7 @@ void rotate(double *x, double *y, double theta){
     *y = yPrime;
 }
 
-void ellipticalArc(struct Geometry *geometry, double *x1, double *y1, double x2, double y2, double rx, double ry, double xAxisRotation, bool largeArcFlag, bool sweepFlag){
+void ellipticalArc(struct Geometry *geometry, struct Vector *vector, double *x1, double *y1, double x2, double y2, double rx, double ry, double xAxisRotation, bool largeArcFlag, bool sweepFlag){
     double cx, cy, startAngle, deltaAngle;
     // Calculate center point
     centerParameterization(&cx, &cy, &startAngle, &deltaAngle, *x1, *y1, x2, y2, rx, ry, xAxisRotation, largeArcFlag, sweepFlag);
@@ -379,7 +378,7 @@ void ellipticalArc(struct Geometry *geometry, double *x1, double *y1, double x2,
         double x = cos(theta) * xr + -sin(theta) * yr + cx;
         double y = sin(theta) * xr + cos(theta) * yr + cy;
 
-        addPoint(geometry, x, y);
+        addPoint(geometry, vector, x, y);
         
         if(deltaAngle == angle){
             break;
@@ -401,33 +400,32 @@ void updateReflection(double *reflection, double pX3, double pY3, double pX4, do
     reflection[1] = pY4 - pY3;
 }
 
-// Loop throw all commands and convert them to geometry
+// loop throw all commands and convert them to geometry
 // the geometry is closed when there is a z command
 void path2Geometry(struct Geometry ***geometries, uint16_t *geometryCount, struct Path *path){
-    double x = 0;
-    double y = 0;
-    double commandStartX = 0;
-    double commandStartY = 0;
+    double x = 0, y = 0;
+    double commandStartX = 0, commandStartY = 0;
 
     char lastCommandType;
     double curvetoReflection[2] = {0};
     double bezierCurveReflection[2] = {0};
 
     struct Geometry *geometry;
+    struct Vector *vector = NULL;
     geometryInit(&geometry);
-
-    *geometryCount = 1;
-    initSingleLinkedList(&geometry->pointsHead, &geometry->pointsTail);
-
-    *geometries = malloc(sizeof(struct Geometry*) * (*geometryCount));
+    newVector(&vector);
+    
+    uint16_t size = 1;
 
     struct Command *command = NULL;
+    struct Node *geometriesHead = NULL, *geometriesTail = NULL;
 
     for(uint16_t commandIndex = 0; commandIndex < path->commandsSize; commandIndex++){
         command = path->commands[commandIndex];
+        // printCommand(command);
         uint16_t parametersSize = command->parametersSize;
-        // printf("typeIndex: %u\n", command->typeIndex);
         uint8_t commandSize = commandsSizes[command->typeIndex];
+        // printf("typeIndex: %u\n", command->typeIndex);
         // printf("Command[%u]: %c\n", parametersSize, (char)command->type);
 
         if(commandSize != 0 && parametersSize % commandSize != 0){
@@ -444,39 +442,55 @@ void path2Geometry(struct Geometry ***geometries, uint16_t *geometryCount, struc
                     commandStartX = x;
                     commandStartY = y;
                 }
-                addPoint(geometry, x, y);
+                addPoint(geometry, vector, x, y);
                 // printf("Moved to [%g %g]\n", x, y);
             }
         }
         else if(command->type == 'z'){
-            // printf("Closing path on [%g %g]\n", commandStartX, commandStartY);
-            void *voidPoint = point2Void(commandStartX, commandStartY);
-            push(geometry->pointsHead, &geometry->pointsTail, voidPoint);
-
-            *(*geometries + *geometryCount - 1) = geometry;
+            // printf("closing path on [%g %g]\n", commandStartX, commandStartY);
+            addPoint(geometry, vector, commandStartX, commandStartY);
+                
             if(commandIndex != path->commandsSize - 1){
-                // printf("New geometry alloc\n");
+                // printf("new geometry alloc\n");
+
+                // void *voidPoint = point2Void(commandStartX, commandStartY);
+                // push(&geometry->pointsHead, &geometry->pointsTail, voidPoint);
+                geometry->points = vectorGetDataAndFree(vector, &geometry->pointsSize);
+                push(&geometriesHead, &geometriesTail, (void*)geometry);
+
                 geometryInit(&geometry);
-                initSingleLinkedList(&geometry->pointsHead, &geometry->pointsTail);
-                *geometryCount += 1;
-                *geometries = realloc(*geometries, sizeof(struct Geometry*) * (*geometryCount));
+                newVector(&vector);
+
+                size += 1;
+                // *geometries = realloc(*geometries, sizeof(struct Geometry*) * (*geometryCount));
+
+                if(commandIndex + 1 < path->commandsSize && path->commands[commandIndex + 1]->type == 'm'){ 
+                    x = commandStartX;
+                    y = commandStartY;
+                }
+                else{
+                    addPoint(geometry, vector, commandStartX, commandStartY);
+                    x = 0.0;
+                    y = 0.0;
+                }
             }
         }
         else if(command->type == 'l'){
             for(uint16_t i = 0; i < parametersSize; i += commandSize){
+                // printf("abs: %i\n", command->absolute);
                 x = command->parameters[i + 0] + ((command->absolute) ? 0.0 : x);
                 y = command->parameters[i + 1] + ((command->absolute) ? 0.0 : y);
 
-                addPoint(geometry, x, y);
-                // printf("Lineto [%g %g]\n", x, y);
+                addPoint(geometry, vector, x, y);
+                // printf("lineto [%g %g]\n", x, y);
             }
         }
         else if(command->type == 'h'){
             for(uint16_t i = 0; i < parametersSize; i += commandSize){
                 x = command->parameters[i] + ((command->absolute) ? 0.0 : x);
 
-                addPoint(geometry, x, y);
-                // printf("Horizontal line to [%g]\n", x);
+                addPoint(geometry, vector, x, y);
+                // printf("horizontal line to [%g]\n", x);
             }
         }
         else if(command->type == 'v'){
@@ -484,8 +498,8 @@ void path2Geometry(struct Geometry ***geometries, uint16_t *geometryCount, struc
             for(uint16_t i = 0; i < parametersSize; i += commandSize){
                 y = command->parameters[i] + ((command->absolute) ? 0.0 : y);
 
-                addPoint(geometry, x, y);
-                // printf("Vertical line to [%g]\n", y);
+                addPoint(geometry, vector, x, y);
+                // printf("vertical line to [%g]\n", y);
             }
         }
         else if(command->type == 'c'){
@@ -499,7 +513,7 @@ void path2Geometry(struct Geometry ***geometries, uint16_t *geometryCount, struc
                 double pX4 = absolute(x, points[i + 4], command->absolute);
                 double pY4 = absolute(y, points[i + 5], command->absolute);
                 updateReflection(curvetoReflection, pX3, pY3, pX4, pY4);
-                curveto(geometry, &x, &y, pX2, pY2, pX3, pY3, pX4, pY4);
+                curveto(geometry, vector, &x, &y, pX2, pY2, pX3, pY3, pX4, pY4);
                 // printf("Curveto: %g %g\n", x, y);
             }
         }
@@ -522,7 +536,7 @@ void path2Geometry(struct Geometry ***geometries, uint16_t *geometryCount, struc
                 pX4 = absolute(x, points[i + 2], command->absolute);
                 pY4 = absolute(y, points[i + 3], command->absolute);
                 updateReflection(curvetoReflection, pX3, pY3, pX4, pY4);
-                curveto(geometry, &x, &y, pX2, pY2, pX3, pY3, pX4, pY4);
+                curveto(geometry, vector, &x, &y, pX2, pY2, pX3, pY3, pX4, pY4);
             }
         }
         else if(command->type == 'q'){
@@ -533,7 +547,7 @@ void path2Geometry(struct Geometry ***geometries, uint16_t *geometryCount, struc
                 double pX3 = absolute(x, points[i + 2], command->absolute);
                 double pY3 = absolute(y, points[i + 3], command->absolute);
                 updateReflection(bezierCurveReflection, pX2, pY2, pX3, pY3);
-                quadraticBeziercurveto(geometry, &x, &y, pX2, pY2, pX3, pY3);
+                quadraticBeziercurveto(geometry, vector, &x, &y, pX2, pY2, pX3, pY3);
             }
         }
         else if(command->type == 't'){
@@ -553,7 +567,7 @@ void path2Geometry(struct Geometry ***geometries, uint16_t *geometryCount, struc
                 pX3 = absolute(x, points[i + 0], command->absolute);
                 pY3 = absolute(y, points[i + 1], command->absolute);
                 updateReflection(bezierCurveReflection, pX2, pY2, pX3, pY3);
-                quadraticBeziercurveto(geometry, &x, &y, pX2, pY2, pX3, pY3);
+                quadraticBeziercurveto(geometry, vector, &x, &y, pX2, pY2, pX3, pY3);
             }
         }
         else if(command->type == 'a'){
@@ -567,26 +581,44 @@ void path2Geometry(struct Geometry ***geometries, uint16_t *geometryCount, struc
                 double x2 = absolute(x, points[i + 5], command->absolute);
                 double y2 = absolute(y, points[i + 6], command->absolute);
                 // printf("Elliptical arc %g, %g, %g, %g, %g, %g, %g, %i, %i\n", x, y, x2, y2, rx, ry, xAxisRotation, (int)largeArcFlag, (int)sweepFlag);
-                ellipticalArc(geometry, &x, &y, x2, y2, rx, ry, xAxisRotation, largeArcFlag, sweepFlag);
+                ellipticalArc(geometry, vector, &x, &y, x2, y2, rx, ry, xAxisRotation, largeArcFlag, sweepFlag);
             }
         }
         else{
             printf("Command \"%c\" not found\n", command->type);
         }
 
+        // printf("[%g %g] ", y, x);
         lastCommandType = command->type;
     }
-    *(*geometries + *geometryCount - 1) = geometry;
+
+    geometry->points = vectorGetDataAndFree(vector, &geometry->pointsSize);
+    push(&geometriesHead, &geometriesTail, (void*)geometry);
+    
+    *geometries = malloc(sizeof(struct Geometry*) * size);
+    struct Node *curr = geometriesHead, *temp = NULL;
+    for(int i = 0; curr; i++){
+        temp = curr;
+        curr = curr->next;
+        (*geometries)[i] = (struct Geometry*)(temp->data);
+        // free(temp);
+    }
+
+    *geometryCount = size;
 }
 
-// Count number of commands in path data
+void printPath(struct Path *path){
+    for(int i = 0; i < path->commandsSize; i++){
+        printCommand(path->commands[i]);
+    }
+}
+
+// count number of commands in path data
 // split them into seperate strings
 void parsePath(xmlNode *node, struct Path **path){
     char *pathData = (char*)xmlGetProp(node, (const xmlChar*)"d");
     
-    Node *head = NULL;
-    Node *tail = NULL;
-    initSingleLinkedList(&head, &tail);
+    struct Node *head = NULL, *tail = NULL;
 
     char *buffer = malloc(sizeof(char) * (BUFFER_MAX_SIZE + 1));
     uint8_t bufferSize = 0;
@@ -602,7 +634,7 @@ void parsePath(xmlNode *node, struct Path **path){
             if((isChar && *ptr != 'e') || *ptr == ' ' || *ptr == ','){
                 if(0 < bufferSize){
                     buffer[bufferSize] = '\0';
-                    push(head, &tail, buffer);
+                    push(&head, &tail, buffer);
                     buffer = NULL;
                     bufferSize = 0;
                     buffer = malloc(sizeof(char) * (BUFFER_MAX_SIZE + 1));
@@ -612,7 +644,8 @@ void parsePath(xmlNode *node, struct Path **path){
                     char *command = malloc(sizeof(char) * (1 + 1));
                     command[0] = *ptr;
                     command[1] = '\0';
-                    push(head, &tail, command);
+                    push(&head, &tail, command);
+                    // printf("command added %s\n", command);
                     commandsCount++;
                 }
             }
@@ -627,7 +660,7 @@ void parsePath(xmlNode *node, struct Path **path){
         else{
             if(0 < bufferSize){
                 buffer[bufferSize] = '\0';
-                push(head, &tail, buffer);
+                push(&head, &tail, buffer);
             }
             break;
         }
@@ -644,14 +677,14 @@ void parsePath(xmlNode *node, struct Path **path){
     uint16_t parametersSize = 0;
 
     char *deletedNodesData = NULL;
-    for(int i = -1; (deletedNodesData = delete(&head, 1)) != NULL; ){
+    for(int i = -1; (deletedNodesData = deleteFront(&head, &tail)) != NULL; ){
         uint8_t charV = (int8_t)deletedNodesData[0];
         bool upperCaseChar = (65 <= charV && charV <= 90);
         bool lowerCaseChar = (97 <= charV && charV <= 122);
         bool isChar = (upperCaseChar || lowerCaseChar);
         charV = (upperCaseChar) ? charV + 32 : charV;
 
-        // If its a char => new commands starts
+        // If its a char => new command starts
         // first get type of the command
         // make new command and set a information aboout it (is it absolute)
         // allocate first minimul size of memory that the command needs
@@ -702,6 +735,8 @@ void parsePath(xmlNode *node, struct Path **path){
     (*path)->commands = commands;
     (*path)->commandsSize = commandsCount;
 
+    // printPath(*path);
+
     if(pathData != NULL){
         free(pathData);
     }
@@ -720,7 +755,7 @@ void traversElement(xmlNode *node, unsigned int depth, struct SVG *svg){
                 path2Geometry(&geometries, &geometryCount, path);
                 freePath(&path);
 
-                // Realloc the size for all new geometries
+                // realloc the size for all new geometries
                 uint16_t geometryOffset = svg->geometryCount;
                 svg->geometryCount += geometryCount;
                 svg->geometries = realloc(svg->geometries, sizeof(struct Geometry*) * svg->geometryCount);

@@ -13,15 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#ifndef SINGLELINKEDLIST
-#define SINGLELINKEDLIST
-
 #include <stdlib.h>
+#include <stdio.h>
 
-struct Node{
-    void *data;
-    struct Node *next;
-};
+#include "singleLinkedList.h"
 
 int initSingleLinkedList(struct Node **head, struct Node **tail){
     *head = malloc(sizeof(struct Node));
@@ -86,7 +81,7 @@ void insert(struct Node **head, struct Node **tail, char *data){
     }
 }
 
-char *delete(struct Node **head, int index){
+void *deleteIndex(struct Node **head, int index){
     struct Node **indirect = head;
     char *data = NULL;
 
@@ -135,5 +130,3 @@ void freeSingleLinkedList(struct Node *head){
         free(temp);
     }
 }
-
-#endif

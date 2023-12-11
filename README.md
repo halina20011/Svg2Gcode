@@ -5,8 +5,7 @@ Simple command line interface to convert svg image to gcode
 libxml2 </br>
 
 ## Build
-```chmod +x build.sh``` </br>
-```./build.sh``` </br>
+`build main` 
 
 ## Help message
 ```
@@ -27,6 +26,6 @@ Arguments:
 ```
 
 # Examples
-```./Build/svg2Gcode -f Examples/loremIpsum.svg -cw 220 -ch 220 -c``` </br>
-```./Build/svg2Gcode -f ./Examples/text.svg -z 10 -w 220 -h 200 -o ./Examples/example.gcode``` </br>
-```./Build/svg2Gcode -f ./Examples/img1.svg``` </br>
+```./build/svg2Gcode -f Examples/loremIpsum.svg -cw 220 -ch 220 -c``` </br>
+```./build/svg2Gcode -f ./Examples/text.svg -z 10 -w 220 -h 200 -o ./Examples/example.gcode``` </br>
+```./build/svg2Gcode -f ./Examples/img1.svg``` </br>

@@ -13,18 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#ifndef VECTOR
-#define VECTOR
-
 #include <stdlib.h>
+#include <stdbool.h>
 
-struct Vector{
-    double *data;
-    size_t size;
-    size_t maxSize;
-};
-
-#define DEFAULT_MAX_SIZE 20
+#include "vector.h"
 
 void newVector(struct Vector **vector){
     *vector = malloc(sizeof(struct Vector));
@@ -62,5 +54,3 @@ void freeVector(struct Vector *vector){
     free(vector->data);
     free(vector);
 }
-
-#endif

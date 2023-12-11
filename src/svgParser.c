@@ -13,32 +13,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#ifndef SVGPARSER
-#define SVGPARSER
-
-#include <stdlib.h>
-#include <stdbool.h>
-#include <math.h>       // pow, hypot
-#include <float.h>      // DBL_MIN, DBL_MAX
-#include <stdint.h>
-
-#include <libxml/parser.h>
-
-#include "./singleLinkedList.h"
-#include "./vector.h"
-
-#define BUFFER_MAX_SIZE 32
+#include "svgParser.h"
+#include "mathFunc.h"
 
 #define COMMANDS_LENGHT 10
 uint8_t commandsTypes[COMMANDS_LENGHT]  = {'m', 'z', 'l', 'h', 'v', 'c', 's', 'q', 't', 'a'};
 uint8_t commandsSizes[COMMANDS_LENGHT]  = {  2,   0,   2,   1,   1,   6,   4,   4,   2,   7};
-
-struct Geometry{
-    double *points;
-    size_t pointsSize;
-    double bounds[4];
-    double length;
-};
 
 int geometryInit(struct Geometry **geometry){
     *geometry = malloc(sizeof(struct Geometry));
@@ -110,14 +90,6 @@ void addPoint(struct Geometry *geometry, struct Vector *vector, double x, double
     // push(&geometry->pointsHead, &geometry->pointsTail, voidPoint);
 }
 
-struct SVG{
-    double width, height;
-    uint16_t docWidth, docHeight;
-    struct Geometry **geometries;
-    uint16_t geometryCount;
-    double bounds[4];
-};
-
 int svgInit(struct SVG **svg){
     *svg = malloc(sizeof(struct SVG));
     if(*svg == NULL){
@@ -172,14 +144,6 @@ void freeSvg(struct SVG *svg){
 //     }
 // }
 
-struct Command{
-    uint8_t type;
-    uint8_t typeIndex;
-    bool absolute;
-    double *parameters;
-    uint16_t parametersSize;
-};
-
 void printCommand(struct Command *command){
     printf("%c ", command->type);
     for(int i = 0; i < command->parametersSize; i++){
@@ -193,11 +157,6 @@ void freeCommand(struct Command *command){
     free(command->parameters);
     free(command);
 }
-
-struct Path{
-    struct Command **commands;
-    uint16_t commandsSize;
-};
 
 void freePath(struct Path **path){
     for(uint16_t i = 0; i < (*path)->commandsSize; i++){
@@ -251,32 +210,6 @@ void curveto(struct Geometry *geometry, struct Vector *vector, double *x, double
             *y = py;
             break;
         }
-    }
-}
-
-double rad(double r){
-    return (r * 180.0) / ((double)M_PI);
-}
-
-double angleCalc(double x1, double y1, double x2, double y2){
-    double innerProduct = x1 * x2 + y1 * y2;
-    double lengthVectro1 = hypot(x1, y1);
-    double lengthVectro2 = hypot(x2, y2);
-    double r = acos(innerProduct / (lengthVectro1 * lengthVectro2));
-
-    if(x1 * y2 - y1 * x2 < 0.0){
-        r *= -1.0;
-    }
-
-    return r;
-}
-
-void normalizeAngle360(double *angle){
-    while(*angle < 0.0){
-        *angle += 360.0;
-    }
-    while(360.0 <= *angle){
-        *angle -= 360.0;
     }
 }
 
@@ -345,13 +278,6 @@ void centerParameterization(double *cx, double *cy, double *startAngle, double *
     }
 
     // printf("Center of ellipse is [%g %g] %g %g\n", *cx, *cy, *startAngle, *deltaAngle);
-}
-
-void rotate(double *x, double *y, double theta){
-    double xPrime = *x * cos(theta) - *y * sin(theta);
-    double yPrime = *x * sin(theta) + *y * cos(theta);
-    *x = xPrime;
-    *y = yPrime;
 }
 
 void ellipticalArc(struct Geometry *geometry, struct Vector *vector, double *x1, double *y1, double x2, double y2, double rx, double ry, double xAxisRotation, bool largeArcFlag, bool sweepFlag){
@@ -769,5 +695,3 @@ void traversElement(xmlNode *node, unsigned int depth, struct SVG *svg){
         traversElement(currentNode->children, depth + 1, svg);
     }
 }
-
-#endif
